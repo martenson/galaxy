@@ -1,5 +1,5 @@
 #!/bin/sh
-
+# hohoho
 pwd_dir=$(pwd)
 cd `dirname $0`
 
