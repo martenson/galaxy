@@ -16,7 +16,7 @@ The latest information about Galaxy is available via `http://galaxyproject.org/ 
 .. image:: https://travis-ci.org/galaxyproject/galaxy.svg?branch=dev
     :target: https://travis-ci.org/galaxyproject/galaxy
 
-Galaxy Quickstart
+Booooooooooooooo!
 =================
 
 Galaxy requires Python 2.6 or 2.7. To check your python version, run:
