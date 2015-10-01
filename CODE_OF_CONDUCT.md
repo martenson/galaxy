@@ -1,6 +1,5 @@
-Galaxy Project Code of Conduct
-==============================
-
+BEHAVE!
+======
 This code of conduct outlines our expectations for participants within the
 Galaxy community, as well as steps to reporting unacceptable behavior. We are
 committed to providing a welcoming and inspiring community for all and expect
