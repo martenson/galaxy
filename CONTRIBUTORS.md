@@ -1,7 +1,7 @@
 # Contributors
 
 The following individuals have contributed code to Galaxy:
-
+TEST
 * Enis Afgan <afgane@gmail.com>
 * Istvan Albert <istvan.albert@gmail.com>
 * Renato Alves <alves.rjc@gmail.com> <rjalves@igc.gulbenkian.pt>
