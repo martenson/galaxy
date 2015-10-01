@@ -1,5 +1,5 @@
 #!/bin/sh
-
+# boom baby!
 cd `dirname $0`
 
 : ${HOSTTYPE:=`uname -m`}
