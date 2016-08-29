@@ -183,7 +183,7 @@ RELEASE_ISSUE_TEMPLATE = string.Template("""
       - [ ] Open newly created files and manually curate major topics and release notes.
 
             - [ ] inject 3 witty comments
-            - [ ] inject one whimsical story
+            - [ ] inject one whimsical anecdote
             - [ ] inject one topical reference (preferably satirical in nature) to contemporary world event
       - [ ] Commit release notes.
 
