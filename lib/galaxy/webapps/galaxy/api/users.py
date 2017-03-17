@@ -431,21 +431,19 @@ class UserAPIController( BaseAPIController, UsesTagsMixin, CreatesUsersMixin, Cr
         """
         Prepare the account activation link for the user.
         """
-        activation_token = self.get_activation_token( trans, email )
+        activation_token = self.new_activation_token( trans, email )
         activation_link = url_for( controller='user', action='activate', activation_token=activation_token, email=email, qualified=True  )
         return activation_link
 
-    def get_activation_token( self, trans, email ):
+    def new_activation_token( self, trans, email ):
         """
         Check for the activation token. Create new activation token and store it in the database if no token found.
         """
         user = trans.sa_session.query( trans.app.model.User ).filter( trans.app.model.User.table.c.email == email ).first()
-        activation_token = user.activation_token
-        if activation_token is None:
-            activation_token = hash_util.new_secure_hash( str( random.getrandbits( 256 ) ) )
-            user.activation_token = activation_token
-            trans.sa_session.add( user )
-            trans.sa_session.flush()
+        activation_token = hash_util.new_secure_hash( str( random.getrandbits( 256 ) ) )
+        user.activation_token = activation_token
+        trans.sa_session.add( user )
+        trans.sa_session.flush()
         return activation_token
 
     def _validate_email_publicname(self, email, username):
