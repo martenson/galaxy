@@ -15,6 +15,7 @@ from galaxy import exceptions
 from galaxy import util
 from galaxy import web
 from galaxy.exceptions import ObjectNotFound
+from galaxy.managers import base as managers_base
 from galaxy.managers import folders, roles
 from galaxy.tools.actions import upload_common
 from galaxy.tools.parameters import populate_state
@@ -30,6 +31,7 @@ class LibraryDatasetsController( BaseAPIController, UsesVisualizationMixin ):
 
     def __init__( self, app ):
         super( LibraryDatasetsController, self ).__init__( app )
+        self.app = app
         self.folder_manager = folders.FolderManager()
         self.role_manager = roles.RoleManager( app )
 
@@ -262,7 +264,7 @@ class LibraryDatasetsController( BaseAPIController, UsesVisualizationMixin ):
                 trans.app.security_agent.make_dataset_public( dataset )
             else:
                 for role_id in new_access_roles_ids:
-                    role = self.role_manager.get( trans, self.__decode_id( trans, role_id, 'role' ) )
+                    role = self.role_manager.get( trans, managers_base.decode_id( self.app, role_id ) )
                     #  Check whether role is in the set of allowed roles
                     valid_roles, total_roles = trans.app.security_agent.get_valid_roles( trans, dataset )
                     if role in valid_roles:
@@ -284,7 +286,7 @@ class LibraryDatasetsController( BaseAPIController, UsesVisualizationMixin ):
             active_access_roles = dataset.get_access_roles( trans )
 
             for role_id in new_manage_roles_ids:
-                role = self.role_manager.get( trans, self.__decode_id( trans, role_id, 'role' ) )
+                role = self.role_manager.get( trans, managers_base.decode_id( self.app, role_id ) )
                 #  Check whether role is in the set of access roles
                 if role in active_access_roles:
                     valid_manage_roles.append( role )
@@ -306,7 +308,7 @@ class LibraryDatasetsController( BaseAPIController, UsesVisualizationMixin ):
             active_access_roles = dataset.get_access_roles( trans )
 
             for role_id in new_modify_roles_ids:
-                role = self.role_manager.get( trans, self.__decode_id( trans, role_id, 'role' ) )
+                role = self.role_manager.get( trans, managers_base.decode_id( self.app, role_id ) )
                 #  Check whether role is in the set of access roles
                 if role in active_access_roles:
                     valid_modify_roles.append( role )
@@ -739,17 +741,3 @@ class LibraryDatasetsController( BaseAPIController, UsesVisualizationMixin ):
             upper_folder = trans.sa_session.query( trans.app.model.LibraryFolder ).get( folder.parent_id )
             path_to_root.extend( self._build_path( trans, upper_folder ) )
         return path_to_root
-
-    def __decode_id( self, trans, encoded_id, object_name=None ):
-        """
-        Try to decode the id.
-
-        :param  object_name:      Name of the object the id belongs to. (optional)
-        :type   object_name:      str
-        """
-        try:
-            return trans.security.decode_id( encoded_id )
-        except TypeError:
-            raise exceptions.MalformedId( 'Malformed %s id specified, unable to decode.' % object_name if object_name is not None else '' )
-        except ValueError:
-            raise exceptions.MalformedId( 'Wrong %s id specified, unable to decode.' % object_name if object_name is not None else '' )
