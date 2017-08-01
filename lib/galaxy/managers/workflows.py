@@ -611,10 +611,10 @@ class WorkflowContentsManager(UsesAnnotations):
                 )
                 step_dict['subworkflow'] = subworkflow_as_dict
 
-            # Data inputs
+            # Data inputs, legacy section not used anywhere within core
             input_dicts = []
             step_state = module.state.inputs or {}
-            if "name" in step_state:
+            if "name" in step_state and module.type != 'tool':
                 name = step_state.get( "name" )
                 input_dicts.append( { "name": name, "description": annotation_str } )
             for name, val in step_state.items():
@@ -822,7 +822,7 @@ class WorkflowContentsManager(UsesAnnotations):
         step = model.WorkflowStep()
         # TODO: Consider handling position inside module.
         step.position = step_dict['position']
-        if "uuid" in step_dict and step_dict['uuid'] != "None":
+        if step_dict.get("uuid", None) and step_dict['uuid'] != "None":
             step.uuid = step_dict["uuid"]
         if "label" in step_dict:
             step.label = step_dict["label"]

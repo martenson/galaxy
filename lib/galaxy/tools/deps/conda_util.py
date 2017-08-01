@@ -254,14 +254,14 @@ class CondaContext(installable.InstallableContext):
         if condarc_override:
             env["CONDARC"] = condarc_override
         log.debug("Executing command: %s", command)
-        env['HOME'] = tempfile.mkdtemp(prefix='conda_exec_home_')  # We don't want to pollute ~/.conda, which may not even be writable
+        conda_exec_home = env['HOME'] = tempfile.mkdtemp(prefix='conda_exec_home_')  # We don't want to pollute ~/.conda, which may not even be writable
         try:
             return self.shell_exec(command, env=env)
         except commands.CommandLineException as e:
             log.warning(e)
             return e.returncode
         finally:
-            shutil.rmtree(env['HOME'], ignore_errors=True)
+            shutil.rmtree(conda_exec_home, ignore_errors=True)
 
     def exec_create(self, args, allow_local=True):
         create_base_args = [
@@ -488,7 +488,7 @@ def cleanup_failed_install(conda_target, conda_context=None):
     cleanup_failed_install_of_environment(conda_target.install_environment, conda_context=conda_context)
 
 
-def best_search_result(conda_target, conda_context=None, channels_override=None):
+def best_search_result(conda_target, conda_context=None, channels_override=None, offline=False):
     """Find best "conda search" result for specified target.
 
     Return ``None`` if no results match.
@@ -498,6 +498,8 @@ def best_search_result(conda_target, conda_context=None, channels_override=None)
         conda_context.ensure_channels_configured()
 
     search_cmd = [conda_context.conda_exec, "search", "--full-name", "--json"]
+    if offline:
+        search_cmd.append("--offline")
     if channels_override:
         search_cmd.append("--override-channels")
         for channel in channels_override:
