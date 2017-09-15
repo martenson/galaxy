@@ -1,5 +1,5 @@
 /** Masthead Collection **/
-define(['layout/generic-nav-view', 'mvc/webhooks', 'utils/localization'], function( GenericNav, Webhooks, _l ) {
+define(['layout/generic-nav-view', 'mvc/webhooks', 'utils/localization', 'utils/utils'], function( GenericNav, Webhooks, _l, Utils ) {
 var Collection = Backbone.Collection.extend({
     model: Backbone.Model.extend({
         defaults: {
@@ -36,11 +36,7 @@ var Collection = Backbone.Collection.extend({
             title           : _l('Workflow'),
             tooltip         : _l('Chain tools into workflows'),
             disabled        : !Galaxy.user.id,
-            url             : 'workflow',
-            target          : 'galaxy_main',
-            onclick         : function() {
-                                  window.location = Galaxy.root + 'workflow';
-                            }
+            url             : 'workflow'
         });
 
         //
@@ -56,16 +52,16 @@ var Collection = Backbone.Collection.extend({
                     url     : 'library/list'
                 },{
                     title   : _l('Histories'),
-                    url     : 'history/list_published'
+                    url     : 'histories/list_published'
                 },{
                     title   : _l('Workflows'),
-                    url     : 'workflow/list_published'
+                    url     : 'workflows/list_published'
                 },{
                     title   : _l('Visualizations'),
-                    url     : 'visualization/list_published'
+                    url     : 'visualizations/list_published'
                 },{
                     title   : _l('Pages'),
-                    url     : 'page/list_published'
+                    url     : 'pages/list_published'
             }]
         });
 
@@ -93,7 +89,7 @@ var Collection = Backbone.Collection.extend({
         this.add({
             id              : 'visualization',
             title           : _l('Visualization'),
-            url             : 'visualization/list',
+            url             : 'visualizations/list',
             tooltip         : _l('Visualize datasets'),
             disabled        : !Galaxy.user.id,
             menu            : [{
@@ -102,7 +98,7 @@ var Collection = Backbone.Collection.extend({
                     target  : '_frame'
                 },{
                     title   : _l('Saved Visualizations'),
-                    url     : 'visualization/list',
+                    url     : 'visualizations/list',
                     target  : '_frame'
                 },{
                     title   : _l('Interactive Environments'),
@@ -122,13 +118,24 @@ var Collection = Backbone.Collection.extend({
                     $.each(webhooks.models, function(index, model) {
                         var webhook = model.toJSON();
                         if (webhook.activate) {
-                            self.add({
+                            var obj = {
                                 id      : webhook.name,
                                 icon    : webhook.config.icon,
                                 url     : webhook.config.url,
                                 tooltip : webhook.config.tooltip,
                                 onclick : webhook.config.function && new Function(webhook.config.function),
-                            });
+                            };
+
+                            // Galaxy.page is undefined for data libraries, workflows pages
+                            if( Galaxy.page ) {
+                                Galaxy.page.masthead.collection.add(obj);
+                            }
+                            else if( Galaxy.masthead ) {
+                                Galaxy.masthead.collection.add(obj);
+                            }
+                            
+                            // Append masthead script and styles to Galaxy main
+                            Utils.appendScriptStyle( webhook );
                         }
                     });
                 });
@@ -179,15 +186,7 @@ var Collection = Backbone.Collection.extend({
                     target  : '_blank'
                 },{
                     title   : _l('Interactive Tours'),
-                    url     : 'tours',
-                    onclick : function(){
-                        if (Galaxy.router){
-                            Galaxy.router.navigate('tours', {'trigger': true});
-                        } else {
-                            // Redirect and use clientside routing to go to tour index
-                            window.location = Galaxy.root + "tours";
-                        }
-                    }
+                    url     : 'tours'
             }]
         };
         options.terms_url && helpTab.menu.push({
@@ -210,28 +209,40 @@ var Collection = Backbone.Collection.extend({
         //
         // User tab.
         //
+        var userTab = {};
         if ( !Galaxy.user.id ){
-            var userTab = {
-                id              : 'user',
-                title           : _l('Login or Register'),
-                cls             : 'loggedout-only',
-                tooltip         : _l('Account registration or login'),
-                menu            : [{
-                    title           : _l('Login'),
-                    url             : 'user/login',
-                    target          : 'galaxy_main',
-                    noscratchbook   : true
-                }]
-            };
-            options.allow_user_creation && userTab.menu.push({
-                title           : _l('Register'),
-                url             : 'user/create',
-                target          : 'galaxy_main',
-                noscratchbook   : true
-            });
-            this.add( userTab );
+            if ( options.allow_user_creation ) {
+                userTab = {
+                    id              : 'user',
+                    title           : _l('Login or Register'),
+                    cls             : 'loggedout-only',
+                    tooltip         : _l('Account registration or login'),
+                    menu            : [{
+                            title           : _l('Login'),
+                            url             : 'user/login',
+                            target          : 'galaxy_main',
+                            noscratchbook   : true
+                        }, {
+                            title: _l('Register'),
+                            url: 'user/create',
+                            target: 'galaxy_main',
+                            noscratchbook: true
+                        }
+                    ]
+                };
+            } else {
+                userTab = {
+                    id: 'user',
+                    title: _l('Login'),
+                    cls: 'loggedout-only',
+                    tooltip: _l('Login'),
+                    url: 'user/login',
+                    target: 'galaxy_main',
+                    noscratchbook: true
+                };
+            }
         } else {
-            var userTab = {
+            userTab = {
                 id              : 'user',
                 title           : _l('User'),
                 cls             : 'loggedin-only',
@@ -240,47 +251,31 @@ var Collection = Backbone.Collection.extend({
                         title   : _l('Logged in as') + ' ' + Galaxy.user.get( 'email' )
                     },{
                         title   : _l('Preferences'),
-                        url     : 'user',
-                        target  : 'galaxy_main',
-                        onclick : function() {
-                            if ( Galaxy.router ) {
-                                Galaxy.router.push( 'user' );
-                            } else {
-                                window.location = Galaxy.root + 'user';
-                            }
-                        }
+                        url     : 'user'
                     },{
                         title   : _l('Custom Builds'),
-                        url     : 'custom_builds',
-                        target  : 'galaxy_main',
-                        onclick : function() {
-                            if ( Galaxy.router ) {
-                                Galaxy.router.push( 'custom_builds' );
-                            } else {
-                                window.location = Galaxy.root + 'custom_builds';
-                            }
-                        }
+                        url     : 'custom_builds'
                     },{
                         title   : _l('Logout'),
-                        url     : 'user/logout',
+                        url     : 'user/logout?session_csrf_token=' + Galaxy.session_csrf_token,
                         target  : '_top',
                         divider : true
                     },{
                         title   : _l('Saved Histories'),
-                        url     : 'history/list',
-                        target  : 'galaxy_main'
+                        url     : 'histories/list',
+                        target  : '_top'
                     },{
                         title   : _l('Saved Datasets'),
-                        url     : 'dataset/list',
-                        target  : 'galaxy_main'
+                        url     : 'datasets/list',
+                        target  : '_top'
                     },{
                         title   : _l('Saved Pages'),
-                        url     : 'page/list',
+                        url     : 'pages/list',
                         target  : '_top'
                     }]
             };
-            this.add( userTab );
         }
+        this.add( userTab );
         var activeView = this.get( options.active_view );
         activeView && activeView.set( 'active', true );
         return new jQuery.Deferred().resolve().promise();
