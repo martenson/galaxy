@@ -928,6 +928,8 @@ class AbstractToolBox(Dictifiable, ManagesIntegratedToolPanelMixin):
         """
         to_dict toolbox.
         """
+        from galaxy import util
+        todict_timer = util.ExecutionTimer()
         if in_panel:
             panel_elts = list(self.tool_panel_contents(trans, **kwds))
             # Produce panel.
@@ -938,6 +940,7 @@ class AbstractToolBox(Dictifiable, ManagesIntegratedToolPanelMixin):
             )
             for elt in panel_elts:
                 rval.append(elt.to_dict(**kwargs))
+            log.debug("todict in panel: %s", todict_timer)
         else:
             filter_method = self._build_filter_method(trans)
             tools = []
@@ -947,6 +950,7 @@ class AbstractToolBox(Dictifiable, ManagesIntegratedToolPanelMixin):
                     continue
                 tools.append(tool.to_dict(trans, link_details=True))
             rval = tools
+            log.debug("todict full: %s", todict_timer)
 
         return rval
 
