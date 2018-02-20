@@ -58,6 +58,9 @@ class AbstractToolBox(Dictifiable, ManagesIntegratedToolPanelMixin):
         # dictionary can instead hold multiple tools with different versions.
         self._tool_versions_by_id = {}
         self._workflows_by_id = {}
+        # Cache for to_dict calls
+        self._cached_todict_panel = None
+        self._cached_todict_all = None
         # In-memory dictionary that defines the layout of the tool panel.
         self._tool_panel = ToolPanelElements()
         self._index = 0
@@ -931,27 +934,36 @@ class AbstractToolBox(Dictifiable, ManagesIntegratedToolPanelMixin):
         from galaxy import util
         todict_timer = util.ExecutionTimer()
         if in_panel:
-            panel_elts = list(self.tool_panel_contents(trans, **kwds))
-            # Produce panel.
-            rval = []
-            kwargs = dict(
-                trans=trans,
-                link_details=True
-            )
-            for elt in panel_elts:
-                rval.append(elt.to_dict(**kwargs))
-            log.debug("todict in panel: %s", todict_timer)
+            if self._cached_todict_panel:
+                log.debug("CACHED todict in panel: %s", todict_timer)
+                return self._cached_todict_panel
+            else:
+                panel_elts = list(self.tool_panel_contents(trans, **kwds))
+                # Produce panel.
+                rval = []
+                kwargs = dict(
+                    trans=trans,
+                    link_details=True
+                )
+                for elt in panel_elts:
+                    rval.append(elt.to_dict(**kwargs))
+                self._cached_todict_panel = rval
+                log.debug("todict in panel: %s", todict_timer)
         else:
-            filter_method = self._build_filter_method(trans)
-            tools = []
-            for id, tool in self._tools_by_id.items():
-                tool = filter_method(tool, panel_item_types.TOOL)
-                if not tool:
-                    continue
-                tools.append(tool.to_dict(trans, link_details=True))
-            rval = tools
-            log.debug("todict full: %s", todict_timer)
-
+            if self._cached_todict_all:
+                log.debug("CACHED todict full: %s", todict_timer)
+                return self._cached_todict_all
+            else:
+                filter_method = self._build_filter_method(trans)
+                tools = []
+                for id, tool in self._tools_by_id.items():
+                    tool = filter_method(tool, panel_item_types.TOOL)
+                    if not tool:
+                        continue
+                    tools.append(tool.to_dict(trans, link_details=True))
+                rval = tools
+                self._cached_todict_all = rval
+                log.debug("todict full: %s", todict_timer)
         return rval
 
     def _lineage_in_panel(self, panel_dict, tool=None, tool_lineage=None):
