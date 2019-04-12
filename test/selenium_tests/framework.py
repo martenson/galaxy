@@ -259,6 +259,15 @@ class SeleniumTestCase(FunctionalTestCase, NavigatesGalaxy, UsesApiTestCaseMixin
 
         self.driver.save_screenshot(target)
 
+    def save_log(self, label):
+        # for entry in self.driver.get_log('browser'):
+        #     print(entry)
+        target = self._screenshot_path(label, ".log")
+        if target is None:
+            return
+        with open(target, "w") as f:
+            f.write(self.driver.get_log('browser'))
+
     def write_screenshot_directory_file(self, label, content):
         target = self._screenshot_path(label, ".txt")
         if target is None:
