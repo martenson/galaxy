@@ -18,6 +18,8 @@ class LibraryContentsTestCase(SeleniumTestCase):
         self._assert_num_displayed_items_is(0)
         self.libraries_folder_create("folder1")
         self._assert_num_displayed_items_is(1)
+        self.screenshot("libraries_dataset_import")
+        self.save_log("test_log_libraries")
 
     @selenium_test
     def test_import_dataset_from_history(self):
