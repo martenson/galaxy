@@ -275,6 +275,9 @@ class JSAppLauncher(BaseUIController):
         self._check_require_login(trans)
         return self._bootstrapped_client(trans, **kwd)
 
+    # This includes contextualized user options in the bootstrapped data; we
+    # don't want to cache it.
+    @web.do_not_cache
     def _bootstrapped_client(self, trans, app_name='analysis', **kwd):
         js_options = self._get_js_options(trans)
         js_options['config'].update(self._get_extended_config(trans))
@@ -901,11 +904,12 @@ class UsesVisualizationMixin(UsesLibraryMixinItems):
             bookmarks = unpack_bookmarks(config['bookmarks'])
             vis_rev.config = {"view": view_content, "bookmarks": bookmarks}
             # Viewport from payload
-            if 'viewport' in config:
-                chrom = config['viewport']['chrom']
-                start = config['viewport']['start']
-                end = config['viewport']['end']
-                overview = config['viewport']['overview']
+            viewport = config.get('viewport')
+            if viewport:
+                chrom = viewport['chrom']
+                start = viewport['start']
+                end = viewport['end']
+                overview = viewport['overview']
                 vis_rev.config["viewport"] = {'chrom': chrom, 'start': start, 'end': end, 'overview': overview}
         else:
             # Default action is to save the config as is with no validation.
@@ -1024,7 +1028,7 @@ class UsesVisualizationMixin(UsesLibraryMixinItems):
                         tracks.append(pack_collection(drawable_dict))
 
             config = {"title": visualization.title,
-                      "vis_id": trans.security.encode_id(visualization.id),
+                      "vis_id": trans.security.encode_id(visualization.id) if visualization.id is not None else None,
                       "tracks": tracks,
                       "bookmarks": bookmarks,
                       "chrom": "",
