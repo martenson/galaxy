@@ -267,7 +267,6 @@ const Collection = Backbone.Collection.extend({
                     cls: "loggedout-only",
                     tooltip: _l("Login"),
                     url: "login",
-                    target: "galaxy_main",
                     noscratchbook: true
                 };
             }
@@ -280,7 +279,8 @@ const Collection = Backbone.Collection.extend({
                 tooltip: _l("Account and saved data"),
                 menu: [
                     {
-                        title: `${_l("Logged in as")} ${Galaxy.user.get("email")}`
+                        title: `${_l("Logged in as")} ${Galaxy.user.get("email")}`,
+                        class: "dropdown-item disabled"
                     },
                     {
                         title: _l("Preferences"),
@@ -439,6 +439,7 @@ const Tab = Backbone.View.extend({
             .addClass("dropdown-item")
             .attr("href", options.url)
             .attr("target", options.target)
+            .attr("class", options.class)
             .attr("role", "menuitem")
             .html(options.title)
             .on("click", e => {

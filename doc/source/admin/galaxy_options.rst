@@ -10,6 +10,20 @@
 :Type: str
 
 
+~~~~~~~~~~~~~~~~~~~~~~
+``managed_config_dir``
+~~~~~~~~~~~~~~~~~~~~~~
+
+:Description:
+    The directory that will be prepended to relative paths in options
+    specifying config files controlled by Galaxy (such as
+    shed_tool_config_file, etc.). Must be writable by the user running
+    Galaxy.  Defaults to `<config_dir>/` if running Galaxy from source
+    or `<data_dir>/config` otherwise.
+:Default: ``None``
+:Type: str
+
+
 ~~~~~~~~~~~~
 ``data_dir``
 ~~~~~~~~~~~~
@@ -272,7 +286,7 @@
     upon tool installation, whereas Galaxy will fail to start if any
     files in tool_config_file cannot be read.
     The value of this option will be resolved with respect to
-    <mutable_config_dir>.
+    <managed_config_dir>.
 :Default: ``shed_tool_conf.xml``
 :Type: str
 
@@ -303,7 +317,7 @@
     tool shed upon a new release, they will be added to this tool
     config file.
     The value of this option will be resolved with respect to
-    <config_dir>.
+    <managed_config_dir>.
 :Default: ``migrated_tools_conf.xml``
 :Type: str
 
@@ -318,6 +332,8 @@
     tool panel layout.  This file can be changed by the Galaxy
     administrator to alter the layout of the tool panel.  If not
     present, Galaxy will create it.
+    The value of this option will be resolved with respect to
+    <managed_config_dir>.
 :Default: ``integrated_tool_panel.xml``
 :Type: str
 
@@ -695,19 +711,6 @@
 :Type: int
 
 
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-``manage_dependency_relationships``
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-:Description:
-    Enable use of an in-memory registry with bi-directional
-    relationships between repositories (i.e., in addition to lists of
-    dependencies for a repository, keep an in-memory registry of
-    dependent items for each repository.
-:Default: ``false``
-:Type: bool
-
-
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ``tool_data_table_config_path``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -733,7 +736,7 @@
     following file, which is parsed and applied to the
     ToolDataTableManager at server start up.
     The value of this option will be resolved with respect to
-    <mutable_config_dir>.
+    <managed_config_dir>.
 :Default: ``shed_tool_data_table_conf.xml``
 :Type: str
 
@@ -787,7 +790,9 @@
 :Description:
     File that defines the builds (dbkeys) available at sites used by
     display applications and the URL to those sites.
-:Default: ``config/build_sites.yml.sample``
+    The value of this option will be resolved with respect to
+    <config_dir>.
+:Default: ``build_sites.yml``
 :Type: str
 
 
@@ -1584,17 +1589,6 @@
 :Description:
     The URL linked by the "Videos" link in the "Help" menu.
 :Default: ``https://vimeo.com/galaxyproject``
-:Type: str
-
-
-~~~~~~~~~~~~~~~~~~~~~~
-``genomespace_ui_url``
-~~~~~~~~~~~~~~~~~~~~~~
-
-:Description:
-    Points to the GenomeSpace UI service which will be used by the
-    GenomeSpace importer and exporter tools
-:Default: ``https://gsui.genomespace.org/jsui/``
 :Type: str
 
 
@@ -3264,6 +3258,17 @@
 :Type: bool
 
 
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+``job_metrics_config_file``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+:Description:
+    XML config file that contains the job metric collection
+    configuration.
+:Default: ``config/job_metrics_conf.xml``
+:Type: str
+
+
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ``expose_potentially_sensitive_job_metrics``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -3314,7 +3319,7 @@
     File where Tool Shed based Data Managers are configured. This file
     will be created automatically upon data manager installation.
     The value of this option will be resolved with respect to
-    <mutable_config_dir>.
+    <managed_config_dir>.
 :Default: ``shed_data_manager_conf.xml``
 :Type: str
 
@@ -3666,7 +3671,7 @@
 
 :Description:
     CSS file to apply to "Galaxy Page" exports to PDF. Generally
-    prefer  markdown_export_css, but this is here for deployments that
+    prefer markdown_export_css, but this is here for deployments that
     would like to tailor different kinds of exports.
 :Default: ``markdown_export_pages.css``
 :Type: str
@@ -3678,7 +3683,7 @@
 
 :Description:
     CSS file to apply to invocation report exports to PDF. Generally
-    prefer  markdown_export_css, but this is here for deployments that
+    prefer markdown_export_css, but this is here for deployments that
     would like to tailor different kinds of exports.
 :Default: ``markdown_export_invocation_reports.css``
 :Type: str

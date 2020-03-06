@@ -172,15 +172,16 @@ class ToolsController(BaseAPIController, UsesVisualizationMixin):
         """
         test_counts_by_tool = {}
         for id, tool in self.app.toolbox.tools():
-            tests = tool.tests
-            if tests:
-                if tool.id not in test_counts_by_tool:
-                    test_counts_by_tool[tool.id] = {}
-                available_versions = test_counts_by_tool[tool.id]
-                available_versions[tool.version] = {
-                    "tool_name": tool.name,
-                    "count": len(tests),
-                }
+            if not tool.is_datatype_converter:
+                tests = tool.tests
+                if tests:
+                    if tool.id not in test_counts_by_tool:
+                        test_counts_by_tool[tool.id] = {}
+                    available_versions = test_counts_by_tool[tool.id]
+                    available_versions[tool.version] = {
+                        "tool_name": tool.name,
+                        "count": len(tests),
+                    }
         return test_counts_by_tool
 
     @expose_api_raw_anonymous_and_sessionless
@@ -550,9 +551,14 @@ class ToolsController(BaseAPIController, UsesVisualizationMixin):
         for job in vars.get('jobs', []):
             rval['jobs'].append(self.encode_all_ids(trans, job.to_dict(view='collection'), recursive=True))
             if inputs.get('send_email_notification', False):
-                job_email_action = trans.model.PostJobAction('EmailAction')
-                job.add_post_job_action(job_email_action)
-                new_pja_flush = True
+                # Unless an anonymous user is invoking this via the API it
+                # should never be an option, but check and enforce that here
+                if trans.user is None:
+                    raise exceptions.ToolExecutionError("Anonymously run jobs cannot send an email notification.")
+                else:
+                    job_email_action = trans.model.PostJobAction('EmailAction')
+                    job.add_post_job_action(job_email_action)
+                    new_pja_flush = True
 
         if new_pja_flush:
             trans.sa_session.flush()
