@@ -3177,23 +3177,23 @@ class Parquet(Binary):
         except Exception as exc:
             return f"Can't create peek: {unicodify(exc)}"
 
-    def slice_dataset(self, dataset, num_cols, num_rows):
-        try:
-            import pyarrow
-            from pyarrow.parquet import ParquetFile
-        except ImportError:
-            pyarrow = None
-            log.debug('Dependency pyarrow not found, unable to generate preview of parquet dataset.')
+    # def slice_dataset(self, dataset, num_cols, num_rows):
+    #     try:
+    #         import pyarrow
+    #         from pyarrow.parquet import ParquetFile
+    #     except ImportError:
+    #         pyarrow = None
+    #         log.debug('Dependency pyarrow not found, unable to generate preview of parquet dataset.')
 
-    def display_data(self, trans, data, preview=False, filename=None, to_ext=None, **kwd):
+    def display_data(self, trans, dataset, preview=False, filename=None, to_ext=None, **kwd):
+        # log.debug(f"{dataset.to_str()}")
+        log.debug(f"{dataset.__dict__}")
+        if to_ext or not preview:
+            to_ext = to_ext or dataset.extension
+            return self._serve_raw(trans, dataset, to_ext, **kwd)
+
         NUM_ROWS = 30
         NUM_COLS = 30
-        headers = kwd.get("headers", {})
-        # Prevent IE8 from sniffing content type since we're explicit about it.  This prevents intentionally text/plain
-        # content from being rendered in the browser
-        headers['X-Content-Type-Options'] = 'nosniff'
-        headers["content-type"] = "text/html"
-        trans.log_event(f"Display dataset id: {str(data.id)}")
         try:
             import pyarrow
             from pyarrow.parquet import ParquetFile
@@ -3201,19 +3201,18 @@ class Parquet(Binary):
             pyarrow = None
             log.debug('Dependency pyarrow not found, unable to generate preview for parquet file.')
         if pyarrow is not None:
-            log.debug(f"file_name: {data.dataset.file_name}")
             try:
-                pf = ParquetFile(data.dataset.file_name)
+                pf = ParquetFile(dataset.file_name)
                 batch = next(pf.iter_batches(batch_size = NUM_ROWS))
                 chosen_rows = pyarrow.Table.from_batches([batch])
                 max_columns = NUM_COLS if chosen_rows.num_columns > NUM_COLS else chosen_rows.num_columns
                 chosen_columns = chosen_rows.select([x for x in range(0, max_columns)])
                 truncated_data = chosen_columns.to_pandas().to_string()
-                return trans.fill_template_mako("/dataset/large_file.mako", truncated_data=truncated_data, data=data), headers
+                return trans.fill_template_mako("/dataset/large_file.mako", truncated_data=truncated_data, data=dataset)
             except Exception as e:
                 return super().display_data(
                 trans,
-                data=data,
+                dataset=dataset,
                 preview=preview,
                 filename=filename,
                 to_ext=to_ext,
@@ -3225,7 +3224,7 @@ class Parquet(Binary):
         else:
             return super().display_data(
                 trans,
-                data=data,
+                dataset=dataset,
                 preview=preview,
                 filename=filename,
                 to_ext=to_ext,
