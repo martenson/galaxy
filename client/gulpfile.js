@@ -21,6 +21,7 @@ const STATIC_PLUGIN_BUILD_IDS = [
     "ngl",
     "openlayers",
     "openseadragon",
+    "PCA_3Dplot",
     "pv",
     "nora",
 ];
