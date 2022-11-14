@@ -219,7 +219,7 @@
                     overflow-wrap: break-word;
                 }
             }
-            .datatype .value:after {
+            .dbkey .value:before {
                 content: ",";
                 @extend %help-text;
                 margin-right: 4px;

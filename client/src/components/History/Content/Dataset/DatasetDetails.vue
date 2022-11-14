@@ -11,7 +11,7 @@
                         <label v-localize class="prompt">format</label>
                         <span class="value">{{ result.file_ext }}</span>
                     </span>
-                    <span v-if="result.genome_build" class="dbkey">
+                    <span v-if="result.genome_build && result.genome_build !== '?'" class="dbkey">
                         <label v-localize class="prompt">database</label>
                         <b-link class="value" data-label="Database/Build" @click.stop="$emit('edit')">{{
                             result.genome_build
