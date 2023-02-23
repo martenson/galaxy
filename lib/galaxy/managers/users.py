@@ -502,6 +502,7 @@ class UserManager(base.ModelManager, deletable.PurgableManagerMixin):
         to = email
         frm = self.app.config.email_from or f"galaxy-no-reply@{host}"
         subject = "Galaxy Account Activation"
+        log.debug(f"activation_link: {activation_link}")
         try:
             util.send_mail(frm, to, subject, body, self.app.config, html=html)
             return True

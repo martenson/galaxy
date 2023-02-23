@@ -1049,6 +1049,7 @@ class GalaxyWebTransaction(base.DefaultWebTransaction, context.ProvidesHistoryCo
                           refreshed when the message is displayed
         """
         refresh_frames = refresh_frames or []
+        log.debug(f"message displayed: {message}")
         return self.fill_template(
             "message.mako",
             status=type,

@@ -291,6 +291,7 @@ class User(BaseUIController, UsesFormDefinitionsMixin):
                 "You are using an invalid activation link. Try to log in and we will send you a new activation email. <br><a href='%s'>Go to login page.</a>"
             ) % web.url_for(controller="root", action="index")
         else:
+            log.debug(f"this is url_for root index: {web.url_for(controller='root', action='index')}")
             # Find the user
             user = (
                 trans.sa_session.query(trans.app.model.User).filter(trans.app.model.User.table.c.email == email).first()
@@ -308,9 +309,18 @@ class User(BaseUIController, UsesFormDefinitionsMixin):
             if user.activation_token == activation_token[:64]:
                 user.activation_token = None
                 self.user_manager.activate(user)
-                return trans.show_ok_message(
-                    "Your account has been successfully activated! <br><a href='%s'>Go to login page.</a>"
-                ) % web.url_for(controller="root", action="index")
+                filled_template = None
+                try:
+                    filled_template = trans.show_ok_message(
+                        "Your account has been successfully activated! <br><a href='%s'>Go to login page.</a>"
+                    ) % web.url_for(controller="root", action="index")
+                    log.debug("old string sub")
+                except Exception:
+                    log.debug("ef string sub")
+                    filled_template = trans.show_ok_message(
+                        f"Your account has been successfully activated! <br><a href='{web.url_for(controller='root', action='index')}'>Go to login page.</a>"
+                    )
+                return filled_template
             else:
                 #  Tokens don't match. Activation is denied.
                 return trans.show_error_message(

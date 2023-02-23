@@ -253,4 +253,10 @@ def sanitize_html(htmlSource, allow_data_urls=False):
     kwd = dict(tags=_acceptable_elements, attributes=_acceptable_attributes, strip=True)
     if allow_data_urls:
         kwd["protocols"] = list(bleach.ALLOWED_PROTOCOLS) + ["data"]
+    import logging
+
+    log = logging.getLogger(__name__)
+    log.debug(f"htmlSource: {htmlSource}")
+    log.debug(f"bleach out: {bleach.clean(unicodify(htmlSource), **kwd)}")
+
     return bleach.clean(unicodify(htmlSource), **kwd)

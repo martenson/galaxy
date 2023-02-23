@@ -18,6 +18,10 @@ def handle_url_for(*args, **kwargs) -> str:
     try:
         return base.routes.url_for(*args, **kwargs)
     except AttributeError:
+        import logging
+
+        log = logging.getLogger(__name__)
+        log.debug("HOW DID WE GET HERE?")
         return DEPRECATED_URL_ATTRIBUTE_MESSAGE
 
 
