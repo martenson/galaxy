@@ -1122,7 +1122,10 @@ ON CONFLICT
         return Template(in_string).safe_substitute(environment)
 
     def is_active(self):
-        return self.active
+        # This is ONLY used for python social auth (PSA) - it is not used for
+        # authentication in Galaxy, and `user_is_active` checks the attribute directly.
+        # PSA uses this to determine login flow, but ours is the exact same for active and inactive users.
+        return True
 
     def is_authenticated(self):
         # TODO: is required for python social auth (PSA); however, a user authentication is relative to the backend.
