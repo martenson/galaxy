@@ -1,7 +1,14 @@
 import datetime
 import json
+import logging
+import math
+import os
 import re
 import urllib.request
+from concurrent.futures import (
+    as_completed,
+    ThreadPoolExecutor,
+)
 from typing import (
     Any,
     cast,
@@ -10,6 +17,8 @@ from typing import (
 )
 from urllib.error import HTTPError
 from urllib.parse import quote
+
+log = logging.getLogger(__name__)
 
 from typing_extensions import (
     TypedDict,
@@ -102,6 +111,53 @@ class RecordLinks(TypedDict):
     versions: str
     access_links: str
     reserve_doi: str
+
+
+# AWS S3 multipart limits (used by Invenio RDM)
+MIN_UPLOAD_PART_SIZE = 50 * 1024 * 1024  # 50 MiB
+MAX_UPLOAD_PART_SIZE = 5 * 1024**3  # 5 GiB
+MAX_UPLOAD_PARTS = 10_000
+
+
+def calculate_multipart_params(file_size: int, preferred_part_size: int | None = None) -> tuple[int, int]:
+    """Calculate optimal parts count and part size for multipart upload.
+
+    Args:
+        file_size: Total file size in bytes
+        preferred_part_size: Preferred part size in bytes (optional)
+
+    Returns:
+        Tuple of (parts_count, part_size)
+
+    Note:
+        Maximum uploadable file size is MAX_UPLOAD_PARTS * MAX_UPLOAD_PART_SIZE (~48.8 TiB).
+        Files larger than this will still return valid params but would fail server-side.
+    """
+    if file_size == 0:
+        return 1, 0
+
+    # Start with preferred or minimum part size
+    part_size = preferred_part_size or MIN_UPLOAD_PART_SIZE
+
+    # Ensure part_size is within bounds
+    part_size = max(part_size, MIN_UPLOAD_PART_SIZE)
+    part_size = min(part_size, MAX_UPLOAD_PART_SIZE)
+
+    # Calculate parts needed
+    parts = math.ceil(file_size / part_size)
+
+    # If too many parts, increase part size (up to max)
+    while parts > MAX_UPLOAD_PARTS and part_size < MAX_UPLOAD_PART_SIZE:
+        part_size = min(part_size * 2, MAX_UPLOAD_PART_SIZE)
+        parts = math.ceil(file_size / part_size)
+
+    # For extremely large files, cap parts at MAX_UPLOAD_PARTS
+    # This means part_size may effectively be larger than calculated
+    # but such files would likely fail server-side anyway
+    if parts > MAX_UPLOAD_PARTS:
+        parts = MAX_UPLOAD_PARTS
+
+    return parts, part_size
 
 
 class InvenioRecord(TypedDict):
@@ -331,6 +387,25 @@ class InvenioRepositoryInteractor(RDMRepositoryInteractor):
         file_path: str,
         context: FilesSourceRuntimeContext[RDMFileSourceConfiguration],
     ):
+        file_size = os.path.getsize(file_path)
+        threshold = context.config.multipart_threshold
+
+        use_multipart = threshold is not None and threshold > 0 and file_size >= threshold
+
+        if use_multipart:
+            log.info(f"Using multipart upload for file '{filename}' ({file_size} bytes >= threshold {threshold})")
+            self._upload_file_multipart(record_id, filename, file_path, file_size, context)
+        else:
+            self._upload_file_single(record_id, filename, file_path, context)
+
+    def _upload_file_single(
+        self,
+        record_id: str,
+        filename: str,
+        file_path: str,
+        context: FilesSourceRuntimeContext[RDMFileSourceConfiguration],
+    ):
+        """Upload a file using single PUT request."""
         record = self._get_draft_record(record_id, context)
         upload_file_url = record["links"]["files"]
         headers = self._get_request_headers(context, auth_required=True)
@@ -350,6 +425,136 @@ class InvenioRepositoryInteractor(RDMRepositoryInteractor):
 
         # Commit file upload
         response = requests.post(commit_file_upload_url, headers=headers)
+        self._ensure_response_has_expected_status_code(response, 200)
+
+    def _upload_file_multipart(
+        self,
+        record_id: str,
+        filename: str,
+        file_path: str,
+        file_size: int,
+        context: FilesSourceRuntimeContext[RDMFileSourceConfiguration],
+    ):
+        """Upload a file using multipart upload.
+
+        Flow:
+        1. Calculate parts/part_size
+        2. POST with transfer metadata
+        3. Server returns links.parts[] with URL for each part
+        4. Upload parts (parallel for > 2 parts)
+        5. POST to commit URL
+        """
+        preferred_part_size = context.config.multipart_chunk_size
+        num_parts, part_size = calculate_multipart_params(file_size, preferred_part_size)
+
+        log.info(f"Multipart upload: {num_parts} parts of {part_size} bytes each for '{filename}'")
+
+        record = self._get_draft_record(record_id, context)
+        upload_file_url = record["links"]["files"]
+        headers = self._get_request_headers(context, auth_required=True)
+
+        # Initialize multipart upload with transfer metadata
+        file_metadata = {
+            "key": filename,
+            "size": file_size,
+            "transfer": {
+                "type": "M",
+                "parts": num_parts,
+                "part_size": part_size,
+            },
+        }
+        response = requests.post(upload_file_url, json=[file_metadata], headers=headers)
+        self._ensure_response_has_expected_status_code(response, 201)
+
+        # Get part upload URLs from response
+        entries = response.json()["entries"]
+        file_entry = next(entry for entry in entries if entry["key"] == filename)
+        commit_url = file_entry["links"]["commit"]
+        part_links = file_entry.get("links", {}).get("parts", [])
+
+        if len(part_links) != num_parts:
+            raise Exception(
+                f"Server returned {len(part_links)} part URLs but expected {num_parts} for file '{filename}'"
+            )
+
+        # Upload parts
+        self._upload_parts(file_path, file_size, part_size, part_links, headers)
+
+        # Commit multipart upload
+        response = requests.post(commit_url, json={}, headers=headers)
+        self._ensure_response_has_expected_status_code(response, 200)
+        log.info(f"Multipart upload completed for '{filename}'")
+
+    def _upload_parts(
+        self,
+        file_path: str,
+        file_size: int,
+        part_size: int,
+        part_links: list[dict],
+        headers: dict,
+    ):
+        """Upload all parts, sequentially for <=2 parts, parallel otherwise."""
+        num_parts = len(part_links)
+
+        if num_parts <= 2:
+            # Sequential upload for small number of parts
+            for part_index, part_info in enumerate(part_links):
+                self._upload_single_part(file_path, file_size, part_size, part_index, part_info, headers)
+        else:
+            # Parallel upload for larger number of parts
+            max_workers = min(4, num_parts)
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {}
+                for part_index, part_info in enumerate(part_links):
+                    future = executor.submit(
+                        self._upload_single_part,
+                        file_path,
+                        file_size,
+                        part_size,
+                        part_index,
+                        part_info,
+                        headers,
+                    )
+                    futures[future] = part_index
+
+                for future in as_completed(futures):
+                    part_index = futures[future]
+                    try:
+                        future.result()
+                    except Exception as e:
+                        log.error(f"Failed to upload part {part_index}: {e}")
+                        raise
+
+    def _upload_single_part(
+        self,
+        file_path: str,
+        file_size: int,
+        part_size: int,
+        part_index: int,
+        part_info: dict,
+        headers: dict,
+    ):
+        """Upload a single part of a multipart upload."""
+        part_url = part_info.get("url")
+        if not part_url:
+            raise Exception(f"No URL provided for part {part_index}")
+
+        # Calculate byte range for this part
+        start_byte = part_index * part_size
+        end_byte = min(start_byte + part_size, file_size)
+        part_content_length = end_byte - start_byte
+
+        log.debug(f"Uploading part {part_index}: bytes {start_byte}-{end_byte-1} ({part_content_length} bytes)")
+
+        with open(file_path, "rb") as f:
+            f.seek(start_byte)
+            part_data = f.read(part_content_length)
+
+        part_headers = headers.copy()
+        part_headers["Content-Length"] = str(part_content_length)
+        part_headers["Content-Type"] = "application/octet-stream"
+
+        response = requests.put(part_url, data=part_data, headers=part_headers)
         self._ensure_response_has_expected_status_code(response, 200)
 
     def download_file_from_container(
