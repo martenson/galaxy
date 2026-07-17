@@ -434,7 +434,7 @@ class InvenioRepositoryInteractor(RDMRepositoryInteractor):
                 self._upload_file_single(record_id, filename, file_path, context)
             except InvenioRequestError as e:
                 if e.status_code == 413:
-                    raise Exception(
+                    raise MessageException(
                         f"Failed to upload file '{filename}' ({file_size} bytes): HTTP 413 Payload Too Large. "
                         f"The server rejected the upload because the file is too large for a single request. "
                         f"Please configure 'multipart_threshold' in the file source configuration to enable multipart upload for files of this size."
@@ -485,7 +485,7 @@ class InvenioRepositoryInteractor(RDMRepositoryInteractor):
         1. Calculate parts/part_size
         2. POST with transfer metadata
         3. Server returns links.parts[] with URL for each part
-        4. Upload parts (parallel for > 2 parts)
+        4. Upload parts in parallel
         5. POST to commit URL
         """
         preferred_part_size_mb = context.config.multipart_chunk_size
