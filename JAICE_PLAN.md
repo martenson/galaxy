@@ -94,6 +94,12 @@ Two facts from the document worth keeping front of mind:
   decrypt at fetch time (zero-plaintext store): ask the repository to
   provide/record a hash of the released container so the CE can verify
   integrity of a download it cannot open.
+- NEW **#7 — DataID↔JobID cardinality and partial binding.** Is N:1 DataID→
+  JobID binding permitted (the figures show a single Data ID; the normative
+  text doesn't pin cardinality)? If the user confirms only a subset of a
+  job's DataIDs, what are retrieval semantics? Will the Invenio binding
+  endpoint/UI support batch confirmation under one JobID? Load-bearing for
+  D10 in `JAICE_FINDINGS.md` §8.
 
 ## 2. Mapping onto Galaxy (verified against this codebase)
 
@@ -417,7 +423,11 @@ are additive to the service; none touch the user-lane API (`/rewrap_for_compute`
   signing requirement the current custody model ships as-is; with one, the
   key service gains a signing API (already listed there, flagged optional).
 - **UX risk:** Option B's separate-channel binding is inherently two-tab; the
-  notification + deep link flow is the mitigation.
+  notification + deep link flow is the mitigation. The cost scales per
+  binding event: a job with N deferred JAICE inputs means N portal
+  confirmations under the per-materialization JobID default (v1) — the
+  per-Galaxy-job batching option (D10 in `JAICE_FINDINGS.md` §8, gated on
+  spec gap #7) exists to address exactly this.
 - **At-rest posture: resolved by design (Topology A).** Object store holds
   ciphertext exclusively; plaintext exists only transiently in job working
   directories inside the boundary. Docs must state this posture explicitly for

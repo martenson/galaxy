@@ -36,6 +36,10 @@ data**, with jobs executing on separate hardware inside a security boundary.
   repository portal — baseline; figure shows the user also sending the DataID
   and the repo binding DataID→JobID) and **Option A** (user signs with USK; CE
   forwards user JWT alongside its own).
+- Option A's user JWT payload contains only `sub`/`jpk` — **no DataID** —
+  so per-dataset authorization granularity exists only in Option B's portal
+  binding step, not in either wire format. Relevant to JobID↔DataID
+  cardinality (D10).
 - Repository trust model: EPKs and UPKs are **pre-registered** (UPK possibly
   via IAM); the optional `jwk` header claim identifies *which* CE/user is
   calling — when absent the repo identifies the CE "through other means (e.g.,
@@ -71,6 +75,12 @@ data**, with jobs executing on separate hardware inside a security boundary.
    literal. Confirmed intent, verify implementation capability.
 6. NEW: container-level hash so the CE can verify integrity of a ciphertext
    download it cannot decrypt (see §5 P3).
+7. NEW: **binding TTL / persistence.** Under per-execution fetch (courrier
+   vs node-fetch), a job may fetch its authorized data long after the user
+   bound DataID↔JobID at the portal (queue waits, retries, staggered workflow
+   steps). Does the repository persist bindings until job completion, or do
+   they expire? If they expire, delayed executions and retry chains break.
+   See §6.6 edge #1.
 
 ---
 
@@ -145,11 +155,32 @@ manifest of public values. Two cooperating cryptographic actors:
 - Recipient identity throughout is **`owner_email`**-keyed user keypairs —
   the single point of coupling JAICE must bridge (per-job vs per-user).
 
-**Output-lane simplification opportunity found:** the demo encrypts outputs
-for the compute key and re-wraps headers to the user key (two hops, egress
-path depends on the service). Encryption needs only public keys, so the node
-can encrypt outputs **directly to the final recipient** — service-free output
-lane.
+**Output-lane mechanism (verified against the branch code,
+`lib/galaxy/job_execution/crypt4gh_staging.py:stage_outputs`):** the inherited
+default is *service-dependent*, not service-free. The node (i) fetches the
+compute public key (`GET /compute-public-key`), (ii) encrypts the plaintext to
+that compute key, (iii) hands the resulting header + the manifest's
+`owner_email` to `/rewrap_for_user`, and the service re-keys the header from
+compute-key to user-key ownership (`registry.get_user_public_key`). The node
+never holds the user's key — the **`owner_email` string is the only recipient
+selector**, and the UPK lives in the service registry keyed by it.
+
+**Service-free output lane — concrete blocker (not yet built):** encrypting
+directly to the user key (the §6/D5 design) needs only public keys, but the
+branch manifest carries `owner_email` *only*; it has no UPK field. Going
+service-free therefore requires Galaxy (head node) to obtain the UPK and inject
+it as a new manifest entry — via a `GET /user-public-key?email=…` lookup against
+the service registry (public data) or a UPK field on the user profile — then the
+node encrypts to that UPK with no `/rewrap_for_user` hop. Until that field +
+lookup exist, JAICE inherits the two-hop, service-dependent output lane as-is.
+
+**Output-lane onboarding gate:** output encryption works only if the owning
+user has a registered keypair — otherwise a completed job has no UPK to rewrap
+to (or, in the service-free lane, no UPK in the manifest). This couples every
+JAICE job's *output* to the user-key onboarding that P2/OD3 flagged for inputs;
+auto-provision at first JAICE use is the current recommendation, but the
+output-side failure mode (silent — job finishes, result is unencryptable) is the
+harder one to surface and should be guarded explicitly.
 
 ---
 
@@ -302,11 +333,12 @@ when operators differ.
 | D2 | Input-lane re-wrap owner | Boundary key service (Topology A) |
 | D3 | JSK generation location | Inside boundary service; Galaxy sees JPK only |
 | D4 | Manifest recipient selector | Add JobID alongside `owner_email` |
-| D5 | Output recipients | Direct node encryption to at-rest recipient; no service hop |
+| D5 | Output recipients | Direct node encryption to at-rest recipient; no service hop. **Not yet built** — branch inherits a two-hop, `owner_email`-keyed service lane; going service-free needs a UPK manifest field + Galaxy lookup (see §3 output-lane blocker) |
 | D6 | Egress policy for JAICE datasets | Ciphertext-only/blocked by default; policy in docs |
 | D7 | CESNET spec gaps | §6.4 list + container hash request |
 | D8 | JSK-signing contradiction (Definitions + §3 vs JWT schemes) — spec-cluster #1 | Blocking-on-CESNET before Phase 2 ships; if a JSK signature is required, the key tier needs a signing API |
 | D9 | Key-service placement | CE-side, inside the boundary (never repo-side — see §6.5) |
+| D10 | JobID cardinality: per-materialization vs per-Galaxy-job (N DataIDs ↔ 1 JobID/JPK) | v1: per-materialization (simplest lifecycle, matches paper figures literally). Fast-follow: per-Galaxy-job batching if CESNET confirms N:1 binding + partial-binding semantics + repo-side batch confirmation (spec gap #7). Blast-radius coarsening is bounded by one job's input set — still tighter than the node-key/user-key alternatives rejected in §6. Key-service registry and manifest selector (`jaice_job_id`) are cardinality-agnostic; the change would be confined to the `jaice_job` model, orchestration, and key-service purge refcounting |
 
 ---
 
