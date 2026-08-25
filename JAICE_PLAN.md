@@ -100,6 +100,24 @@ Two facts from the document worth keeping front of mind:
   job's DataIDs, what are retrieval semantics? Will the Invenio binding
   endpoint/UI support batch confirmation under one JobID? Load-bearing for
   D10 in `JAICE_FINDINGS.md` §8.
+- NEW **#8 — Replay protection.** The doc is silent on `iat`/`exp`/`jti`. A
+  captured CE JWT is replayable indefinitely. Proposal: Galaxy always includes
+  `iat` + short-lived `exp` (≤5 min) + unique `jti`; ask CESNET to require and
+  validate these, and to maintain a short-lived `jti` nonce cache. Highest
+  priority after #1 because it affects wire security.
+- NEW **#9 — Data-request endpoint & method.** The doc never says which
+  Invenio URL the authenticated request targets. Is it a standard RDM file
+  download with JAICE headers, or a dedicated `/jaice/request` endpoint? Pin
+  the contract (method, path, error codes) so the file-source interactor knows
+  what to call and how to handle 4xx/5xx.
+- NEW **#10 — Binding state machine & TTL.** Does the repository persist
+  DataID↔JobID bindings until job completion, or do they expire? Can a user
+  re-bind or un-bind? Must DataID be selected before JobID binding? This
+  drives retry semantics and UX (notification copy, rescue flows).
+
+**Wire profile companion:** `JAICE_WIRE_PROTOCOL.md` pins every wire item
+above as **PINNED** (paper-normative) or **ASSUMED** (our proposal pending
+CESNET confirmation) and is the contract the mock repository implements.
 
 ## 2. Mapping onto Galaxy (verified against this codebase)
 
@@ -238,7 +256,10 @@ secrets in job params — they land in DB/logs/persistence files.
   (`awaiting_user_binding` / `authorized` / `requested` / `done` / `error`),
   `user_jwt` (Option A, base64), `user_id`. **All fields public** — there is
   no secret column on Galaxy anymore; the JSK lives exclusively in the
-  boundary key service keyed by this row's `job_id`.
+  boundary key service keyed by this row's `job_id`. Add observability:
+  `created_at`, `updated_at`, `source_uri` (the full `gxfiles://...` URI),
+  `dataset_id_fk` (link to the HDA that triggered materialization), and
+  `error` (last failure message, nullable).
 
 ### Phase 2 — Authenticated retrieval (file-source extension)
 
@@ -269,6 +290,23 @@ secrets in job params — they land in DB/logs/persistence files.
      dataset and flows through the branch's transparent staging (wrapper
      datatype → matches_any → staging plan → node decrypt). JobID++/manifest
      selector wiring: Phase 2b.
+
+  **Failure modes & retry semantics:**
+  - **Double-fetch race:** two jobs (or a retry of the same job) can trigger
+    materialization of the same deferred dataset. Acquire a per-`jaice_job`
+    advisory lock (DB `SELECT ... FOR UPDATE` on the `jaice_job` row) before
+    issuing the repository request. The lock holder sets state=`requested`;
+    concurrent callers wait and then reuse the same `jaice_job` + JobID,
+    preserving the user's binding.
+  - **Repository errors:** 4xx → mark `jaice_job.state='error'` and surface
+    the message; 5xx/timeouts → retry with exponential backoff (Celery
+    `autoretry_for`), always reusing the same `jaice_job` row and a **fresh**
+    JWT (new `iat`/`exp`/`jti`). Never create a new `jaice_job` on retry —
+    a new JobID would orphan the user's binding.
+  - **Key-service unreachable at fetch time:** the JWT is built but the
+    container cannot be re-wrapped later. Fail the task with a dedicated
+    `JAICEServiceUnavailable` error (mirroring the base branch's
+    `Crypt4GHExternalServiceUnavailable`) so the user sees a clear cause.
 - Optional **explicit-fetch path**: extend `lib/galaxy/schema/fetch_data.py`
   Src union with `src: "jaice"` (`repository_url`, `record_id`, `filename`)
   so users can stage protected data directly from the upload dialog /
@@ -358,6 +396,16 @@ are additive to the service; none touch the user-lane API (`/rewrap_for_compute`
   are ciphertext-only (or blocked); Galaxy structurally cannot decrypt for a
   user. User-view options are client-side decryption with the user's own
   tooling.
+- **Key service deployment & resilience:**
+  - Run the boundary key service as active-passive pair (or stateless set
+    behind a load balancer) with the same vault-backed JSK registry.
+  - Authenticate Galaxy ↔ key-service traffic (mTLS or a vault-issued bearer
+    token); compute nodes need only the public `/jaice/rewrap` endpoint.
+  - Health-check endpoint (`GET /health`) used by Galaxy readiness probes and
+    Celery task pre-flight.
+  - EPK rotation is a two-phase operation: (1) pre-register new EPK at the
+    repository, (2) swap ESK in Galaxy's vault, (3) retire old EPK after all
+    in-flight requests complete. Document this checklist in the admin doc.
 - Worker prerequisites documented: `crypt4gh` + PyNaCl in worker envs,
   compute private key provisioned out-of-band
   (`crypt4gh_compute_private_key_path` / `GALAXY_CRYPT4GH_COMPUTE_PRIVATE_KEY`),
@@ -381,6 +429,19 @@ are additive to the service; none touch the user-lane API (`/rewrap_for_compute`
     node-side decrypt assert (in a test-simulated boundary).
     Verify the mock repo's JWT acceptance with a stock JWT library
     (no `Ed25519` alg special-casing) to surface the alg-literal compat issue early.
+  - **Negative-case repository tests:** bad ESK signature, unknown EPK,
+    expired JWT (`exp` in past), JobID bound to a different DataID, Option A
+    user JWT from unregistered UPK. Assert these produce clear, actionable
+    `jaice_job.state='error'` messages.
+  - **Concurrency tests:** two jobs racing to materialize the same deferred
+    dataset; two compute nodes racing `/jaice/rewrap` for the same `job_id`.
+    Verify idempotency and no duplicate repository requests.
+  - **Interop canary:** after the Phase 2b vertical slice is green, schedule a
+    test session against a CESNET-Invenio staging instance — the three
+    concrete experiments are spelled out in `JAICE_WIRE_PROTOCOL.md` §7
+    (`alg:"Ed25519"` literal acceptance via curl, Ed25519→X25519 derivation
+    direction via the crypt4gh CLI oracle, and the endpoint/binding contract
+    email to CESNET).
 - Docs: `doc/source/admin/` page ("Configuring JAICE repositories" — plugin,
   key service co-deployment, egress policy) + user-facing guide section
   (browse-vs-manual DataID, Option B two-tab flow, ciphertext downloads).
@@ -390,14 +451,24 @@ are additive to the service; none touch the user-lane API (`/rewrap_for_compute`
 0. **Base:** land or rebase `feature/crypt4gh_support` first (datatype wrappers,
    staging machinery, key-service base, worker-side `crypt4gh`). JAICE
    develops on top of it.
-1. **Phase 0+1+2+2b with Option B only**, retrieval via explicit `src: "jaice"`
-   fetch — smallest end-to-end vertical slice: fetch stores ciphertext,
-   staging decrypts on a (test) compute node through the extended key service.
-2. Phase 3 orchestration for Option B (pause/resume + notifications + panel).
+1. **Phase 0+1+2+2b with Option B only**, retrieval driven by a test
+   harness/management command that creates deferred JAICE datasets directly —
+   smallest end-to-end vertical slice: fetch stores ciphertext, staging
+   decrypts on a (test) compute node through the extended key service. Defer
+   the `src: "jaice"` upload-dialog wiring to Phase 3 to keep v1 scope tight.
+2. Phase 3 orchestration for Option B (pause/resume + notifications + panel),
+   plus the `src: "jaice"` explicit-fetch path.
 3. Option A (user JWT) API + signing widget.
 4. Phase 4 hardening; then upstream-ability review (keep `jaice/` package and
    the file-source plugin free of CESNET-deployment specifics so the feature
    is generic "Crypt4GH repository authentication").
+
+**MVP companion:** `JAICE_MVP.md` is the operational cut of this plan —
+a ~730-line vertical slice (Phase 0+1+2+2b, Option B, per-materialization
+JobIDs) with a Week-1 risk-retirement gate (`alg` literal, derivation
+direction, endpoint/binding contract) that must pass before any larger scope
+is attempted. The wire-level contract those experiments validate lives in
+`JAICE_WIRE_PROTOCOL.md`.
 
 ## 4. Dependencies & risks
 
